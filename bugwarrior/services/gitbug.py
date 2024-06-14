@@ -21,6 +21,7 @@ class GitBugConfig(config.ServiceConfig):
     import_labels_as_tags: bool = False
     label_template: str = '{{label}}'
     port: int = 43915
+    complete_closed_issues: bool = False
 
 
 class Webui:
@@ -92,6 +93,7 @@ class GitBugClient(ServiceClient):
                 'labels { name }'
                 'status',
                 'title',
+                'lastEdit',
             ]))['repository']['allBugs']['nodes']
 
 
@@ -123,9 +125,9 @@ class GitBugIssue(Issue):
     UNIQUE_KEY = (ID,)
 
     def to_taskwarrior(self):
-        return {
+        task = {
             'project': self.config.target,
-            'priority': self.config.default_priority,
+            'priority': self.config.default_priority or "",
             'annotations': self.record.get('annotations', []),
             'tags': self.get_tags(),
             'entry': self.parse_date(self.record.get('createdAt')),
@@ -135,6 +137,12 @@ class GitBugIssue(Issue):
             self.STATE: self.record['status'],
             self.TITLE: self.record['title'],
         }
+
+        if ( self.record['status'] == 'CLOSED'
+                and self.config.complete_closed_issues
+            ):
+            task['end'] = self.parse_date(self.record.get('lastEdit'))
+        return task
 
     def get_tags(self):
         return self.get_tags_from_labels(
